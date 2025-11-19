@@ -24,7 +24,7 @@ if sys.platform == 'win32':
 load_dotenv()
 
 # Configuration
-DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '').strip()
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 RATE_LIMIT_DELAY = 1  # seconds between Discord messages
