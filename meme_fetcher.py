@@ -7,8 +7,9 @@ Scrapes trending memes from Reddit and sends them to Discord via webhook.
 import os
 import sys
 import time
+import re
 import requests
-from bs4 import BeautifulSoup
+import feedparser
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
@@ -28,15 +29,10 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 RATE_LIMIT_DELAY = 1  # seconds between Discord messages
 
-# User agent to avoid being blocked by Reddit
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-}
-
 
 def fetch_memes_from_reddit(subreddit: str, limit: int = 5) -> List[Dict]:
     """
-    Scrape memes from a Reddit subreddit's top posts of the week.
+    Fetch memes from a Reddit subreddit's top posts using RSS feeds.
 
     Args:
         subreddit: Name of the subreddit (e.g., 'memes', 'dankmemes')
@@ -45,52 +41,72 @@ def fetch_memes_from_reddit(subreddit: str, limit: int = 5) -> List[Dict]:
     Returns:
         List of dictionaries containing meme data (title, image_url, post_url, score)
     """
-    url = f"https://old.reddit.com/r/{subreddit}/top/?t=week"
+    # Reddit RSS feed URL for top posts
+    rss_url = f"https://www.reddit.com/r/{subreddit}/top/.rss?t=week&limit=50"
     memes = []
 
     print(f"Fetching memes from r/{subreddit}...")
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.get(url, headers=HEADERS, timeout=10)
-            response.raise_for_status()
+            # Parse the RSS feed
+            feed = feedparser.parse(rss_url)
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+            if not feed.entries:
+                print(f"No entries found in RSS feed for r/{subreddit}")
+                return memes
 
-            # Find all post containers
-            posts = soup.find_all('div', class_='thing')
-
-            for post in posts:
+            # Process each entry
+            for entry in feed.entries:
                 if len(memes) >= limit:
                     break
 
                 try:
-                    # Extract title
-                    title_elem = post.find('a', class_='title')
-                    if not title_elem:
-                        continue
-                    title = title_elem.get_text(strip=True)
+                    title = entry.title
+                    post_url = entry.link
 
-                    # Extract post URL
-                    post_url = title_elem.get('href')
-                    if post_url and not post_url.startswith('http'):
-                        post_url = f"https://old.reddit.com{post_url}"
+                    # Extract image URL from the content
+                    image_url = None
 
-                    # Extract image URL from data-url attribute
-                    image_url = post.get('data-url')
+                    # Check if there's a media thumbnail
+                    if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                        image_url = entry.media_thumbnail[0]['url']
 
-                    # Filter for image posts only
-                    if image_url and any(image_url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.gifv']):
-                        # Handle .gifv (convert to .gif or use as-is)
-                        if image_url.endswith('.gifv'):
-                            image_url = image_url.replace('.gifv', '.gif')
+                    # Try to find image in the content
+                    if not image_url and hasattr(entry, 'content'):
+                        content = entry.content[0].value
+                        # Look for image tags in the HTML content
+                        if '<img' in content:
+                            img_match = re.search(r'<img[^>]+src="([^"]+)"', content)
+                            if img_match:
+                                potential_url = img_match.group(1)
+                                # Decode HTML entities
+                                potential_url = potential_url.replace('&amp;', '&')
+                                # Check if it's an actual image (not preview)
+                                if any(ext in potential_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif']) and 'preview' in potential_url:
+                                    image_url = potential_url
 
-                        # Extract upvote score
-                        score_elem = post.find('div', class_='score unvoted')
-                        if not score_elem:
-                            score_elem = post.find('div', class_='score')
-                        score = score_elem.get_text(strip=True) if score_elem else '0'
+                        # Also check for direct image links in the summary
+                        if not image_url:
+                            link_match = re.search(r'href="([^"]+\.(jpg|jpeg|png|gif)[^"]*)"', content)
+                            if link_match:
+                                image_url = link_match.group(1).replace('&amp;', '&')
 
+                    # Try the link itself if it's a direct image
+                    if not image_url and hasattr(entry, 'id'):
+                        if any(entry.id.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                            image_url = entry.id
+
+                    # Extract score from the content if available
+                    score = "?"
+                    if hasattr(entry, 'content'):
+                        content = entry.content[0].value
+                        score_match = re.search(r'(\d+)\s+points?', content)
+                        if score_match:
+                            score = score_match.group(1)
+
+                    # Only add if we found an image
+                    if image_url:
                         memes.append({
                             'title': title,
                             'image_url': image_url,
@@ -99,13 +115,13 @@ def fetch_memes_from_reddit(subreddit: str, limit: int = 5) -> List[Dict]:
                         })
 
                 except Exception as e:
-                    print(f"Error parsing post: {e}")
+                    print(f"Error parsing entry: {e}")
                     continue
 
             print(f"Successfully fetched {len(memes)} memes from r/{subreddit}")
             return memes
 
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"Attempt {attempt + 1}/{MAX_RETRIES} failed: {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)
