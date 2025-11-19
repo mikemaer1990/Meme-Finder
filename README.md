@@ -1,11 +1,13 @@
 # Weekly Meme Fetcher
 
-A Python script that automatically fetches the top 5 trending memes from Reddit every Monday at 5:30 AM PST and sends them to a Discord channel via webhook.
+A Python script that automatically fetches trending memes from Reddit every Monday at 5:30 AM PST and sends them to a Discord channel via webhook.
 
 ## Features
 
-- Scrapes trending memes from Reddit (r/memes, r/dankmemes, r/ProgrammerHumor)
-- Sends formatted memes to Discord with rich embeds
+- **Two categories of memes**:
+  - 5 general trending memes (r/memes, r/dankmemes, r/ProgrammerHumor)
+  - 5 tech/SaaS customer support memes (r/talesfromtechsupport, r/iiiiiiitttttttttttt, r/sysadmin, r/techsupportgore)
+- Sends formatted memes to Discord with rich embeds (different colors for each category)
 - Runs automatically every Monday at 5:30 AM PST using GitHub Actions
 - No Reddit API required - uses web scraping
 - Handles errors gracefully with retry logic
@@ -116,12 +118,15 @@ The script runs automatically:
 
 1. **Scraping**: The script uses BeautifulSoup to scrape `old.reddit.com` for the top posts of the week
 2. **Filtering**: Only image posts (.jpg, .png, .gif) are selected
-3. **Subreddits**: Tries r/memes, r/dankmemes, and r/ProgrammerHumor in order until 5 memes are found
-4. **Discord**: Sends a formatted message with embeds containing:
+3. **Categories**:
+   - **General Trending**: Tries r/memes, r/dankmemes, and r/ProgrammerHumor until 5 memes are found
+   - **Tech/SaaS Customer Support**: Tries r/talesfromtechsupport, r/iiiiiiitttttttttttt, r/ProgrammerHumor, r/sysadmin, and r/techsupportgore until 5 memes are found
+4. **Discord**: Sends two formatted messages with embeds containing:
    - Meme title
    - Image
    - Link to original Reddit post
    - Upvote count
+   - Color-coded by category (orange for general, blue for work-related)
 
 ## Troubleshooting
 
@@ -160,10 +165,11 @@ The script runs automatically:
 
 You can modify the script to:
 
-- Change subreddits: Edit the `subreddits` list in `meme_fetcher.py:170`
+- Change general subreddits: Edit the `general_subreddits` list in `meme_fetcher.py:191`
+- Change work subreddits: Edit the `work_subreddits` list in `meme_fetcher.py:213`
 - Change number of memes: Modify the `limit` parameter in the fetch calls
 - Change schedule: Edit the cron expression in `.github/workflows/weekly_memes.yml:7`
-- Add more subreddits: Add to the `subreddits` list
+- Change embed colors: Modify the `color` parameter in the `send_to_discord` calls
 - Filter NSFW: Add additional filtering logic in the scraping function
 
 ## Dependencies

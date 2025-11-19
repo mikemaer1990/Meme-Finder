@@ -116,30 +116,22 @@ def fetch_memes_from_reddit(subreddit: str, limit: int = 5) -> List[Dict]:
     return memes
 
 
-def send_to_discord(memes: List[Dict], webhook_url: str) -> bool:
+def send_to_discord(memes: List[Dict], webhook_url: str, title: str = "🔥 **Top 5 Memes This Week** 🔥", color: int = 16734003) -> bool:
     """
     Send memes to Discord via webhook with rich embeds.
 
     Args:
         memes: List of meme dictionaries
         webhook_url: Discord webhook URL
+        title: Title for the Discord message
+        color: Embed color (default: orange)
 
     Returns:
         True if successful, False otherwise
     """
     if not memes:
         print("No memes to send")
-        # Send notification that no memes were found
-        payload = {
-            "content": "⚠️ No memes found this week. Please check the scraper configuration."
-        }
-        try:
-            response = requests.post(webhook_url, json=payload, timeout=10)
-            response.raise_for_status()
-            return False
-        except Exception as e:
-            print(f"Error sending notification: {e}")
-            return False
+        return False
 
     # Create embeds for each meme
     embeds = []
@@ -149,13 +141,13 @@ def send_to_discord(memes: List[Dict], webhook_url: str) -> bool:
             "url": meme['post_url'],
             "image": {"url": meme['image_url']},
             "footer": {"text": f"👍 {meme['score']} upvotes"},
-            "color": 16734003  # Orange color
+            "color": color
         }
         embeds.append(embed)
 
     # Prepare payload
     payload = {
-        "content": "🔥 **Top 5 Memes This Week** 🔥",
+        "content": title,
         "embeds": embeds
     }
 
@@ -194,31 +186,72 @@ def main():
         print("❌ Error: Invalid Discord webhook URL")
         sys.exit(1)
 
-    # Try multiple subreddits in order of preference
-    subreddits = ['memes', 'dankmemes', 'ProgrammerHumor']
-    all_memes = []
+    # Category 1: General trending memes
+    print("📊 Fetching general trending memes...\n")
+    general_subreddits = ['memes', 'dankmemes', 'ProgrammerHumor']
+    general_memes = []
 
-    for subreddit in subreddits:
+    for subreddit in general_subreddits:
         memes = fetch_memes_from_reddit(subreddit, limit=5)
-        all_memes.extend(memes)
+        general_memes.extend(memes)
 
         # If we have enough memes, stop
-        if len(all_memes) >= 5:
+        if len(general_memes) >= 5:
             break
 
         # Small delay between subreddit requests
         time.sleep(1)
 
-    # Take top 5 memes
-    top_memes = all_memes[:5]
+    # Take top 5 general memes
+    top_general_memes = general_memes[:5]
 
-    if len(top_memes) < 5:
-        print(f"⚠️ Warning: Only found {len(top_memes)} memes (target was 5)")
+    if len(top_general_memes) < 5:
+        print(f"⚠️ Warning: Only found {len(top_general_memes)} general memes (target was 5)\n")
 
-    # Send to Discord
-    success = send_to_discord(top_memes, DISCORD_WEBHOOK_URL)
+    # Category 2: Customer support memes (SaaS/Tech)
+    print("\n📧 Fetching customer support memes...\n")
+    work_subreddits = ['talesfromtechsupport', 'iiiiiiitttttttttttt', 'sysadmin', 'techsupportgore', 'ProgrammerHumor']
+    work_memes = []
 
-    if success:
+    # Fetch from ALL work subreddits to get variety
+    for subreddit in work_subreddits:
+        memes = fetch_memes_from_reddit(subreddit, limit=2)  # Get 2 from each for variety
+        work_memes.extend(memes)
+
+        # Small delay between subreddit requests
+        time.sleep(1)
+
+    # Take top 5 work memes
+    top_work_memes = work_memes[:5]
+
+    if len(top_work_memes) < 5:
+        print(f"⚠️ Warning: Only found {len(top_work_memes)} customer support memes (target was 5)\n")
+
+    # Send both categories to Discord
+    success_general = False
+    success_work = False
+
+    if top_general_memes:
+        print("\n" + "="*50)
+        success_general = send_to_discord(
+            top_general_memes,
+            DISCORD_WEBHOOK_URL,
+            title="🔥 **Top 5 Trending Memes This Week** 🔥",
+            color=16734003  # Orange
+        )
+        time.sleep(RATE_LIMIT_DELAY)  # Small delay between messages
+
+    if top_work_memes:
+        print("\n" + "="*50)
+        success_work = send_to_discord(
+            top_work_memes,
+            DISCORD_WEBHOOK_URL,
+            title="💻 **Top 5 Tech Support Memes** 💻",
+            color=3447003  # Blue
+        )
+
+    # Check overall success
+    if success_general or success_work:
         print("\n✅ Meme fetcher completed successfully!")
         sys.exit(0)
     else:
